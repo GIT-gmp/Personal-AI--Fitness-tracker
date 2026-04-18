@@ -11,15 +11,21 @@ from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.uix.widget import Widget
 from kivy.uix.gridlayout import GridLayout
+from kivy.graphics import Color, Line, Ellipse, Rectangle
 from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 from PIL import Image as PILImage
 
-HISTORY_FILE = "analysis_history.json"
+HISTORY_FILE   = "analysis_history.json"
+WEIGHT_LOG_FILE = "weight_log.json"
+GOAL_WEIGHT    = 75.0
+START_WEIGHT   = 89.0
 
-# V2.4 CLEAN UI DASHBOARD WITH UPLOAD + HISTORY
+# V2.5 CLEAN UI DASHBOARD WITH UPLOAD + HISTORY + WEIGHT LOG
 KV_INTERFACE = """
 <FitnessRoot>:
     orientation: 'vertical'
@@ -30,7 +36,6 @@ KV_INTERFACE = """
             pos: self.pos
             size: self.size
 
-    # HEADER
     BoxLayout:
         size_hint_y: 0.1
         padding: [15, 10]
@@ -158,7 +163,7 @@ KV_INTERFACE = """
                         markup: True
                         halign: 'center'
 
-            # ON-DEMAND CAMERA CONTAINER (camera added dynamically)
+            # CAMERA CONTAINER
             BoxLayout:
                 id: camera_container
                 orientation: 'vertical'
@@ -166,7 +171,6 @@ KV_INTERFACE = """
                 height: 0
                 opacity: 0
 
-            # DYNAMIC CAPTURE BUTTON
             Button:
                 id: capture_btn
                 text: "CAPTURE"
@@ -176,7 +180,7 @@ KV_INTERFACE = """
                 background_color: 0, 0.8, 0.3, 1
                 on_press: root.capture_and_analyze()
 
-            # ACTION BUTTONS (camera)
+            # CAMERA BUTTONS
             GridLayout:
                 cols: 2
                 spacing: 10
@@ -208,7 +212,15 @@ KV_INTERFACE = """
                     bold: True
                     on_press: root.open_history_popup()
 
-            # AI OUTPUT CONSOLE
+            # WEIGHT LOG BUTTON
+            Button:
+                text: "Weight Log"
+                size_hint_y: None
+                height: 55
+                background_color: 0.1, 0.65, 0.4, 1
+                bold: True
+                on_press: root.open_weight_log_popup()
+
             Label:
                 id: advice_output
                 text: "Select an option above."
@@ -220,7 +232,30 @@ KV_INTERFACE = """
 """
 
 
-# ── History persistence ────────────────────────────────────────────────────────
+# ── Weight log persistence ─────────────────────────────────────────────────────
+
+def load_weight_log():
+    if not os.path.isfile(WEIGHT_LOG_FILE):
+        return []
+    try:
+        with open(WEIGHT_LOG_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_weight_entry(kg):
+    entries = load_weight_log()
+    entries.append({
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "time": datetime.now().strftime("%H:%M"),
+        "kg": kg,
+    })
+    with open(WEIGHT_LOG_FILE, "w") as f:
+        json.dump(entries, f, indent=2)
+
+
+# ── Analysis history persistence ───────────────────────────────────────────────
 
 def load_history():
     if not os.path.isfile(HISTORY_FILE):
@@ -241,6 +276,92 @@ def save_history_entry(mode, result_text):
     })
     with open(HISTORY_FILE, "w") as f:
         json.dump(entries, f, indent=2)
+
+
+# ── Weight chart widget ────────────────────────────────────────────────────────
+
+class WeightChart(Widget):
+    """Canvas-drawn line chart of weight entries with a goal line."""
+
+    PAD = 30   # inner padding
+
+    def __init__(self, entries, **kwargs):
+        super().__init__(**kwargs)
+        self.entries = entries  # list of dicts with 'kg'
+        self.bind(size=self._redraw, pos=self._redraw)
+
+    def _redraw(self, *_):
+        self.canvas.clear()
+        if not self.entries:
+            return
+
+        w, h = self.size
+        x0, y0 = self.pos
+        pad = self.PAD
+
+        weights = [e['kg'] for e in self.entries]
+        # y range: span from min(goal, min_weight) to max(start, max_weight) + buffer
+        y_min = min(GOAL_WEIGHT - 1, min(weights)) - 1
+        y_max = max(START_WEIGHT + 1, max(weights)) + 1
+        y_range = y_max - y_min or 1
+
+        chart_w = w - pad * 2
+        chart_h = h - pad * 2
+
+        def cx(i):
+            if len(weights) == 1:
+                return x0 + pad + chart_w / 2
+            return x0 + pad + i * chart_w / (len(weights) - 1)
+
+        def cy(kg):
+            return y0 + pad + (kg - y_min) / y_range * chart_h
+
+        with self.canvas:
+            # Background
+            Color(0.08, 0.08, 0.08, 1)
+            Rectangle(pos=(x0, y0), size=(w, h))
+
+            # Axis lines
+            Color(0.25, 0.25, 0.25, 1)
+            Line(points=[x0 + pad, y0 + pad, x0 + pad, y0 + pad + chart_h], width=1)
+            Line(points=[x0 + pad, y0 + pad, x0 + pad + chart_w, y0 + pad], width=1)
+
+            # Goal line (dashed effect via short segments)
+            goal_y = cy(GOAL_WEIGHT)
+            Color(0.0, 0.9, 0.4, 0.8)
+            seg = 10
+            for i in range(0, int(chart_w), seg * 2):
+                x_start = x0 + pad + i
+                x_end   = min(x0 + pad + i + seg, x0 + pad + chart_w)
+                Line(points=[x_start, goal_y, x_end, goal_y], width=1.2)
+
+            # Data line
+            if len(weights) > 1:
+                pts = []
+                for i, kg in enumerate(weights):
+                    pts += [cx(i), cy(kg)]
+                Color(0.3, 0.7, 1, 1)
+                Line(points=pts, width=2)
+
+            # Data points
+            dot_r = 5
+            for i, kg in enumerate(weights):
+                px, py = cx(i), cy(kg)
+                # Colour: green if at/below goal, orange if close, red if far
+                diff = kg - GOAL_WEIGHT
+                if diff <= 0:
+                    Color(0.0, 1.0, 0.4, 1)
+                elif diff < 3:
+                    Color(1.0, 0.7, 0.0, 1)
+                else:
+                    Color(1.0, 0.35, 0.35, 1)
+                Ellipse(pos=(px - dot_r, py - dot_r), size=(dot_r * 2, dot_r * 2))
+
+    def on_size(self, *_):
+        self._redraw()
+
+    def on_pos(self, *_):
+        self._redraw()
 
 
 # ── Main widget ────────────────────────────────────────────────────────────────
@@ -292,7 +413,6 @@ class FitnessRoot(BoxLayout):
             return
 
         self.ids.advice_output.text = "[ PROCESSING: CONNECTING TO BRAIN... ]"
-
         photo_path = "capture.png"
         camera.export_to_png(photo_path)
 
@@ -314,7 +434,6 @@ class FitnessRoot(BoxLayout):
 
     def open_upload_picker(self):
         content = BoxLayout(orientation='vertical', spacing=8, padding=10)
-
         chooser = FileChooserIconView(
             filters=['*.png', '*.jpg', '*.jpeg', '*.bmp', '*.gif', '*.webp'],
             path=os.path.expanduser('~'),
@@ -338,7 +457,6 @@ class FitnessRoot(BoxLayout):
             self.ids.advice_output.text = "No valid file selected."
             file_popup.dismiss()
             return
-
         self._pending_upload_path = selection[0]
         file_popup.dismiss()
         self._open_mode_picker()
@@ -349,11 +467,9 @@ class FitnessRoot(BoxLayout):
             text='What would you like to analyze?',
             font_size='16sp', size_hint_y=None, height=40,
         ))
-
         treadmill_btn = Button(text='Treadmill Display', background_color=(0.2, 0.6, 1, 1), size_hint_y=None, height=55)
-        meal_btn = Button(text='Meal / Food', background_color=(1, 0.6, 0.2, 1), size_hint_y=None, height=55)
-        cancel_btn = Button(text='Cancel', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=45)
-
+        meal_btn      = Button(text='Meal / Food',       background_color=(1, 0.6, 0.2, 1), size_hint_y=None, height=55)
+        cancel_btn    = Button(text='Cancel',            background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=45)
         content.add_widget(treadmill_btn)
         content.add_widget(meal_btn)
         content.add_widget(cancel_btn)
@@ -369,9 +485,7 @@ class FitnessRoot(BoxLayout):
         path = self._pending_upload_path
         if not path:
             return
-
         self.ids.advice_output.text = "[ PROCESSING: CONNECTING TO BRAIN... ]"
-
         converted_path = "uploaded_image.png"
         try:
             img = PILImage.open(path).convert('RGB')
@@ -379,97 +493,193 @@ class FitnessRoot(BoxLayout):
         except Exception as e:
             self.ids.advice_output.text = f"Image error: {str(e)}"
             return
+        threading.Thread(target=self.call_gemini_api, args=(converted_path, mode)).start()
 
-        threading.Thread(
-            target=self.call_gemini_api,
-            args=(converted_path, mode)
-        ).start()
+    # ── Weight log popup ───────────────────────────────────────────────────────
 
-    # ── History popup ──────────────────────────────────────────────────────────
+    def open_weight_log_popup(self):
+        entries = load_weight_log()
+
+        outer = BoxLayout(orientation='vertical', spacing=8, padding=10)
+
+        # ── Entry row ──────────────────────────────────────────────────────────
+        entry_row = BoxLayout(size_hint_y=None, height=50, spacing=8)
+        weight_input = TextInput(
+            hint_text="Today's weight (kg)",
+            input_filter='float',
+            multiline=False,
+            size_hint_x=0.6,
+            background_color=(0.15, 0.15, 0.15, 1),
+            foreground_color=(1, 1, 1, 1),
+            cursor_color=(1, 1, 1, 1),
+            font_size='16sp',
+        )
+        log_btn = Button(
+            text='Log',
+            background_color=(0.1, 0.65, 0.4, 1),
+            size_hint_x=0.4,
+            bold=True,
+        )
+        entry_row.add_widget(weight_input)
+        entry_row.add_widget(log_btn)
+        outer.add_widget(entry_row)
+
+        # ── Stats row ──────────────────────────────────────────────────────────
+        if entries:
+            latest = entries[-1]['kg']
+            lost   = START_WEIGHT - latest
+            remain = latest - GOAL_WEIGHT
+            stats_lbl = Label(
+                text=f"Latest: [b]{latest} kg[/b]   Lost: [color=00ff88]{lost:.1f} kg[/color]   To go: [color=ffaa00]{max(remain,0):.1f} kg[/color]",
+                markup=True,
+                size_hint_y=None,
+                height=30,
+                font_size='13sp',
+                halign='center',
+            )
+        else:
+            stats_lbl = Label(
+                text="No entries yet. Log your first weight above.",
+                size_hint_y=None,
+                height=30,
+                font_size='13sp',
+                color=(0.6, 0.6, 0.6, 1),
+                halign='center',
+            )
+        outer.add_widget(stats_lbl)
+
+        # ── Chart ──────────────────────────────────────────────────────────────
+        chart = WeightChart(entries=entries, size_hint_y=None, height=200)
+        outer.add_widget(chart)
+
+        # ── Legend ─────────────────────────────────────────────────────────────
+        legend = Label(
+            text="[color=00e566]━[/color] Goal 75 kg     [color=4db8ff]━[/color] Your weight",
+            markup=True,
+            size_hint_y=None,
+            height=22,
+            font_size='12sp',
+            halign='center',
+        )
+        outer.add_widget(legend)
+
+        # ── Recent entries list ────────────────────────────────────────────────
+        scroll = ScrollView(size_hint_y=1)
+        inner  = BoxLayout(orientation='vertical', spacing=4, padding=4, size_hint_y=None)
+        inner.bind(minimum_height=inner.setter('height'))
+
+        if entries:
+            for e in reversed(entries[-20:]):
+                diff   = e['kg'] - GOAL_WEIGHT
+                colour = "00ff88" if diff <= 0 else ("ffaa00" if diff < 3 else "ff5555")
+                row_lbl = Label(
+                    text=f"[color={colour}]{e['kg']} kg[/color]  —  {e['date']}  {e.get('time','')}",
+                    markup=True,
+                    font_size='13sp',
+                    size_hint_y=None,
+                    height=28,
+                    halign='left',
+                )
+                row_lbl.bind(width=lambda lbl, w: setattr(lbl, 'text_size', (w, None)))
+                inner.add_widget(row_lbl)
+        else:
+            inner.add_widget(Label(text="No entries yet.", size_hint_y=None, height=30,
+                                   color=(0.5, 0.5, 0.5, 1)))
+
+        scroll.add_widget(inner)
+        outer.add_widget(scroll)
+
+        # ── Bottom buttons ─────────────────────────────────────────────────────
+        btn_row   = BoxLayout(size_hint_y=None, height=48, spacing=8)
+        clear_btn = Button(text='Clear All',  background_color=(0.6, 0.15, 0.15, 1))
+        close_btn = Button(text='Close',      background_color=(0.25, 0.25, 0.25, 1))
+        btn_row.add_widget(clear_btn)
+        btn_row.add_widget(close_btn)
+        outer.add_widget(btn_row)
+
+        popup = Popup(
+            title=f'Weight Log  ({len(entries)} entries)',
+            content=outer,
+            size_hint=(0.95, 0.95),
+        )
+
+        # ── Callbacks ──────────────────────────────────────────────────────────
+        def on_log(_):
+            raw = weight_input.text.strip()
+            if not raw:
+                return
+            try:
+                kg = float(raw)
+            except ValueError:
+                return
+            save_weight_entry(kg)
+            popup.dismiss()
+            self.open_weight_log_popup()   # reopen refreshed
+
+        def on_clear(_):
+            if os.path.isfile(WEIGHT_LOG_FILE):
+                os.remove(WEIGHT_LOG_FILE)
+            popup.dismiss()
+            self.open_weight_log_popup()
+
+        log_btn.bind(on_press=on_log)
+        weight_input.bind(on_text_validate=on_log)
+        clear_btn.bind(on_press=on_clear)
+        close_btn.bind(on_press=popup.dismiss)
+
+        popup.open()
+
+    # ── Analysis history popup ─────────────────────────────────────────────────
 
     def open_history_popup(self):
         entries = load_history()
-
         outer = BoxLayout(orientation='vertical', spacing=8, padding=8)
 
         if not entries:
             outer.add_widget(Label(
                 text="No analysis history yet.\nRun a Treadmill or Meal analysis to see results here.",
-                halign='center',
-                color=(0.7, 0.7, 0.7, 1),
+                halign='center', color=(0.7, 0.7, 0.7, 1),
             ))
         else:
             scroll = ScrollView()
-            inner = BoxLayout(
-                orientation='vertical',
-                spacing=10,
-                padding=5,
-                size_hint_y=None,
-            )
+            inner  = BoxLayout(orientation='vertical', spacing=10, padding=5, size_hint_y=None)
             inner.bind(minimum_height=inner.setter('height'))
 
-            # Newest first
             for entry in reversed(entries):
-                card = BoxLayout(
-                    orientation='vertical',
-                    size_hint_y=None,
-                    padding=10,
-                    spacing=4,
-                )
-
-                mode_color = (0.2, 0.6, 1, 1) if entry['mode'] == 'Treadmill' else (1, 0.6, 0.2, 1)
-
-                header = Label(
-                    text=f"[b][color={self._rgba_to_hex(mode_color)}]{entry['mode']}[/color][/b]  {entry['timestamp']}",
-                    markup=True,
-                    font_size='13sp',
-                    size_hint_y=None,
-                    height=24,
-                    halign='left',
-                    text_size=(None, None),
+                card      = BoxLayout(orientation='vertical', size_hint_y=None, padding=10, spacing=4)
+                mode_hex  = "3399ff" if entry['mode'] == 'Treadmill' else "ff9933"
+                header    = Label(
+                    text=f"[b][color={mode_hex}]{entry['mode']}[/color][/b]  {entry['timestamp']}",
+                    markup=True, font_size='13sp', size_hint_y=None, height=24,
+                    halign='left', text_size=(None, None),
                 )
                 result_lbl = Label(
-                    text=entry['result'],
-                    font_size='12sp',
-                    halign='left',
-                    size_hint_y=None,
-                    color=(0.85, 0.85, 0.85, 1),
+                    text=entry['result'], font_size='12sp', halign='left',
+                    size_hint_y=None, color=(0.85, 0.85, 0.85, 1),
                 )
-                result_lbl.bind(
-                    width=lambda lbl, w: setattr(lbl, 'text_size', (w, None))
-                )
-                result_lbl.bind(
-                    texture_size=lambda lbl, ts: setattr(lbl, 'height', ts[1])
-                )
-
+                result_lbl.bind(width=lambda lbl, w: setattr(lbl, 'text_size', (w, None)))
+                result_lbl.bind(texture_size=lambda lbl, ts: setattr(lbl, 'height', ts[1]))
                 card.bind(minimum_height=card.setter('height'))
                 card.add_widget(header)
                 card.add_widget(result_lbl)
 
-                # Divider
-                divider = Label(
-                    text='─' * 60,
-                    font_size='10sp',
-                    size_hint_y=None,
-                    height=16,
-                    color=(0.3, 0.3, 0.3, 1),
-                )
-
+                divider = Label(text='─' * 60, font_size='10sp', size_hint_y=None,
+                                height=16, color=(0.3, 0.3, 0.3, 1))
                 inner.add_widget(card)
                 inner.add_widget(divider)
 
             scroll.add_widget(inner)
             outer.add_widget(scroll)
 
-        # Clear all + close buttons
-        btn_row = BoxLayout(size_hint_y=None, height=48, spacing=8)
+        btn_row   = BoxLayout(size_hint_y=None, height=48, spacing=8)
         clear_btn = Button(text='Clear All', background_color=(0.6, 0.15, 0.15, 1))
-        close_btn = Button(text='Close', background_color=(0.25, 0.25, 0.25, 1))
+        close_btn = Button(text='Close',     background_color=(0.25, 0.25, 0.25, 1))
         btn_row.add_widget(clear_btn)
         btn_row.add_widget(close_btn)
         outer.add_widget(btn_row)
 
-        popup = Popup(title=f'Analysis History ({len(entries)} entries)', content=outer, size_hint=(0.95, 0.92))
+        popup = Popup(title=f'Analysis History ({len(entries)} entries)',
+                      content=outer, size_hint=(0.95, 0.92))
 
         def clear_history(_):
             if os.path.isfile(HISTORY_FILE):
@@ -481,11 +691,6 @@ class FitnessRoot(BoxLayout):
         close_btn.bind(on_press=popup.dismiss)
         popup.open()
 
-    @staticmethod
-    def _rgba_to_hex(rgba):
-        r, g, b, _ = [int(c * 255) for c in rgba]
-        return f"{r:02x}{g:02x}{b:02x}"
-
     # ── Gemini API ─────────────────────────────────────────────────────────────
 
     @mainthread
@@ -494,7 +699,7 @@ class FitnessRoot(BoxLayout):
 
     def call_gemini_api(self, path, mode):
         api_key = "AQ.Ab8RN6JDhwc4Jvn1kTrsJUN4cqTPY8Sx_-nVS0rOzSRyh_8eBg"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url     = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
         if mode == 'treadmill':
             prompt = "Analyze this treadmill display. Extract Distance, Time, and Speed. Provide one specific technical optimization to reach the 75kg goal faster."
@@ -513,13 +718,11 @@ class FitnessRoot(BoxLayout):
                     ]
                 }]
             }
-            headers = {'Content-Type': 'application/json'}
-
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            response = requests.post(url, headers={'Content-Type': 'application/json'},
+                                     data=json.dumps(payload))
 
             if response.status_code == 200:
-                result = response.json()
-                advice = result['candidates'][0]['content']['parts'][0]['text']
+                advice = response.json()['candidates'][0]['content']['parts'][0]['text']
                 save_history_entry(mode, advice)
                 self.update_ui(advice)
             else:
