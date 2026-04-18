@@ -9,6 +9,7 @@ from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 
 # V2.1 DASHBOARD WITH STREAKS
+KV_INTERFACE = # V2.2 CLEAN UI DASHBOARD
 KV_INTERFACE = """
 <FitnessRoot>:
     orientation: 'vertical'
@@ -36,7 +37,7 @@ KV_INTERFACE = """
         BoxLayout:
             orientation: 'vertical'
             padding: 15
-            spacing: 15
+            spacing: 20
             size_hint_y: None
             height: self.minimum_height
 
@@ -44,7 +45,7 @@ KV_INTERFACE = """
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
-                height: 160
+                height: 240
                 padding: 15
                 canvas.before:
                     Color:
@@ -57,10 +58,12 @@ KV_INTERFACE = """
                     text: "Health overview"
                     bold: True
                     font_size: '18sp'
+                    size_hint_y: 0.3
                     text_size: self.size
                     halign: 'left'
                 GridLayout:
-                    cols: 2
+                    cols: 1
+                    spacing: 5
                     Label:
                         text: "[color=00ff00]13612[/color] / 10000 steps"
                         markup: True
@@ -86,7 +89,7 @@ KV_INTERFACE = """
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
-                height: 110
+                height: 140
                 padding: 15
                 canvas.before:
                     Color:
@@ -111,11 +114,11 @@ KV_INTERFACE = """
                     text_size: self.size
                     halign: 'left'
 
-            # STREAK CARD (NEW)
+            # STREAK CARD
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
-                height: 100
+                height: 120
                 padding: 15
                 canvas.before:
                     Color:
@@ -125,10 +128,11 @@ KV_INTERFACE = """
                         size: self.size
                         radius: [15]
                 Label:
-                    text: "Daily Streak 🔥"
+                    text: "Daily Streak"
                     bold: True
                     text_size: self.size
                     halign: 'left'
+                    size_hint_y: 0.4
                 GridLayout:
                     cols: 3
                     Label:
@@ -144,7 +148,7 @@ KV_INTERFACE = """
                         markup: True
                         halign: 'center'
 
-            # ON-DEMAND CAMERA (Hidden by default)
+            # ON-DEMAND CAMERA
             BoxLayout:
                 id: camera_container
                 orientation: 'vertical'
@@ -156,7 +160,7 @@ KV_INTERFACE = """
                     resolution: (640, 480)
                     play: False
 
-            # DYNAMIC CAPTURE BUTTON (Hidden by default)
+            # DYNAMIC CAPTURE BUTTON
             Button:
                 id: capture_btn
                 text: "CAPTURE"
@@ -173,11 +177,11 @@ KV_INTERFACE = """
                 size_hint_y: None
                 height: 60
                 Button:
-                    text: "📷 Treadmill"
+                    text: "Treadmill"
                     background_color: 0.2, 0.6, 1, 1
                     on_press: root.toggle_camera('treadmill')
                 Button:
-                    text: "🥗 Meal Planner"
+                    text: "Meal Planner"
                     background_color: 1, 0.6, 0.2, 1
                     on_press: root.toggle_camera('meal')
 
