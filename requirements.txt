@@ -2,3 +2,6 @@ kivy
 google-generativeai
 Pillow
 requests
+kivy
+Pillow
+requests

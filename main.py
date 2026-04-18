@@ -8,8 +8,7 @@ from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 
-# V2.1 DASHBOARD WITH STREAKS
-KV_INTERFACE = # V2.2 CLEAN UI DASHBOARD
+# V2.2 CLEAN UI DASHBOARD
 KV_INTERFACE = """
 <FitnessRoot>:
     orientation: 'vertical'
@@ -148,17 +147,13 @@ KV_INTERFACE = """
                         markup: True
                         halign: 'center'
 
-            # ON-DEMAND CAMERA
+            # ON-DEMAND CAMERA CONTAINER (camera added dynamically)
             BoxLayout:
                 id: camera_container
                 orientation: 'vertical'
                 size_hint_y: None
                 height: 0
                 opacity: 0
-                Camera:
-                    id: camera
-                    resolution: (640, 480)
-                    play: False
 
             # DYNAMIC CAPTURE BUTTON
             Button:
@@ -200,21 +195,36 @@ class FitnessRoot(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_mode = None
+        self._camera = None
+
+    def _get_or_create_camera(self):
+        if self._camera is not None:
+            return self._camera
+        try:
+            from kivy.uix.camera import Camera
+            cam = Camera(resolution=(640, 480), play=False)
+            self.ids.camera_container.add_widget(cam)
+            self._camera = cam
+        except Exception as e:
+            self.ids.advice_output.text = f"Camera unavailable: {str(e)}"
+            self._camera = None
+        return self._camera
 
     def toggle_camera(self, mode):
         self.current_mode = mode
         camera_container = self.ids.camera_container
         capture_btn = self.ids.capture_btn
-        camera = self.ids.camera
 
-        # Expand the camera and button
+        camera = self._get_or_create_camera()
+        if camera is None:
+            return
+
         camera_container.height = 300
         camera_container.opacity = 1
         capture_btn.height = 60
         capture_btn.opacity = 1
         camera.play = True
-        
-        # Change button text based on context
+
         if mode == 'treadmill':
             capture_btn.text = "ANALYZE TREADMILL"
             self.ids.advice_output.text = "Point camera at treadmill display..."
@@ -223,18 +233,22 @@ class FitnessRoot(BoxLayout):
             self.ids.advice_output.text = "Point camera at food or menu..."
 
     def capture_and_analyze(self):
+        camera = self._camera
+        if camera is None:
+            self.ids.advice_output.text = "No camera available."
+            return
+
         self.ids.advice_output.text = "[ PROCESSING: CONNECTING TO BRAIN... ]"
-        
-        # Take picture and immediately hide camera to save battery
+
         photo_path = "capture.png"
-        self.ids.camera.export_to_png(photo_path)
-        
-        self.ids.camera.play = False
+        camera.export_to_png(photo_path)
+
+        camera.play = False
         self.ids.camera_container.height = 0
         self.ids.camera_container.opacity = 0
         self.ids.capture_btn.height = 0
         self.ids.capture_btn.opacity = 0
-        
+
         Clock.schedule_once(lambda dt: threading.Thread(target=self.call_gemini_api, args=(photo_path, self.current_mode)).start(), 0.5)
 
     @mainthread
@@ -245,7 +259,6 @@ class FitnessRoot(BoxLayout):
         api_key = "AQ.Ab8RN6JDhwc4Jvn1kTrsJUN4cqTPY8Sx_-nVS0rOzSRyh_8eBg"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
-        # Determine the AI's personality/instructions based on the button clicked
         if mode == 'treadmill':
             prompt = "Analyze this treadmill display. Extract Distance, Time, and Speed. Provide one specific technical optimization to reach the 75kg goal faster."
         else:
@@ -266,7 +279,7 @@ class FitnessRoot(BoxLayout):
             headers = {'Content-Type': 'application/json'}
 
             response = requests.post(url, headers=headers, data=json.dumps(payload))
-            
+
             if response.status_code == 200:
                 result = response.json()
                 advice = result['candidates'][0]['content']['parts'][0]['text']
@@ -282,7 +295,7 @@ class PersonalOptimizerApp(App):
         if platform == 'android':
             from android.permissions import request_permissions, Permission
             request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.INTERNET])
-            
+
         Builder.load_string(KV_INTERFACE)
         return FitnessRoot()
 
