@@ -17,7 +17,7 @@ android.permissions = CAMERA, INTERNET, WRITE_EXTERNAL_STORAGE
 android.api = 31
 android.minapi = 21
 android.sdk = 31
-android.ndk = 23b
+android.ndk = 25b
 android.skip_update = False
 android.accept_sdk_license = True
 
