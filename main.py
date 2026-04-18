@@ -531,6 +531,15 @@ KV_INTERFACE = """
                     bold: True
                     on_press: root.open_calorie_popup()
 
+            # TODAY'S SUMMARY
+            Button:
+                text: "Today's Summary"
+                size_hint_y: None
+                height: 55
+                background_color: 0.15, 0.45, 0.75, 1
+                bold: True
+                on_press: root.open_summary_popup()
+
             # WORKOUT TIMER
             Button:
                 text: "Workout Timer"
@@ -867,6 +876,139 @@ class FitnessRoot(BoxLayout):
         refresh_display()
         popup.open()
 
+    # ── Today's summary popup ──────────────────────────────────────────────────
+
+    def open_summary_popup(self):
+        today         = datetime.now().strftime("%Y-%m-%d")
+        today_display = datetime.now().strftime("%B %d, %Y")
+
+        weight_entries = load_weight_log()
+        latest_entry   = weight_entries[-1] if weight_entries else None
+
+        settings  = load_calorie_settings()
+        budget    = settings.get("budget", DEFAULT_BUDGET)
+        meals     = get_today_entries()
+        consumed  = sum(e['kcal'] for e in meals)
+        remaining = budget - consumed
+        cal_pct   = min(consumed / budget * 100, 100) if budget > 0 else 0
+
+        history        = load_history()
+        today_analyses = [e for e in history if e.get("timestamp", "").startswith(today)]
+
+        outer = BoxLayout(orientation='vertical', spacing=6, padding=10)
+        scroll = ScrollView(size_hint_y=1)
+        inner  = BoxLayout(orientation='vertical', spacing=6, padding=4, size_hint_y=None)
+        inner.bind(minimum_height=inner.setter('height'))
+
+        def sep():
+            return Label(text='─' * 60, font_size='9sp', size_hint_y=None, height=14,
+                         color=(0.22, 0.22, 0.22, 1))
+
+        def section_title(text, colour):
+            lbl = Label(
+                text=f"[b][color={colour}]{text}[/color][/b]",
+                markup=True, size_hint_y=None, height=32, font_size='15sp', halign='left',
+            )
+            lbl.bind(width=lambda l, w: setattr(l, 'text_size', (w, None)))
+            return lbl
+
+        def stat_lbl(text):
+            lbl = Label(
+                text=text, markup=True, size_hint_y=None, height=26,
+                font_size='13sp', halign='left', color=(0.85, 0.85, 0.85, 1),
+            )
+            lbl.bind(width=lambda l, w: setattr(l, 'text_size', (w, None)))
+            return lbl
+
+        # ── Weight ─────────────────────────────────────────────────────────────
+        inner.add_widget(section_title("Weight", "4db8ff"))
+        if latest_entry:
+            kg    = latest_entry['kg']
+            lost  = START_WEIGHT - kg
+            to_go = max(kg - GOAL_WEIGHT, 0)
+            wpct  = min(lost / (START_WEIGHT - GOAL_WEIGHT) * 100, 100)
+            kc    = "00ff88" if to_go == 0 else ("ffaa00" if to_go < 3 else "ff5555")
+            inner.add_widget(stat_lbl(
+                f"Latest: [b][color={kc}]{kg} kg[/color][/b]  "
+                f"(logged {latest_entry.get('date','')})"
+            ))
+            inner.add_widget(stat_lbl(
+                f"Lost so far: [color=00ff88]{lost:.1f} kg[/color]   "
+                f"Still to go: [color=ffaa00]{to_go:.1f} kg[/color]"
+            ))
+            goal_bar = PhaseBar(ratio=wpct/100, colour=(0.1, 0.65, 0.4),
+                                size_hint_y=None, height=38)
+            inner.add_widget(goal_bar)
+            inner.add_widget(stat_lbl(
+                f"Goal progress: [b]{wpct:.0f}%[/b]  ({START_WEIGHT} → {GOAL_WEIGHT} kg)"
+            ))
+        else:
+            inner.add_widget(stat_lbl("[color=555555]No weight logged yet today.[/color]"))
+
+        inner.add_widget(sep())
+
+        # ── Calories ───────────────────────────────────────────────────────────
+        inner.add_widget(section_title("Calories", "ff9933"))
+        cal_bar = CalorieBudgetBar(consumed=consumed, budget=budget,
+                                   size_hint_y=None, height=38)
+        inner.add_widget(cal_bar)
+        rem_col = "00ff88" if remaining >= 0 else "ff4444"
+        inner.add_widget(stat_lbl(
+            f"Consumed: [b]{consumed} kcal[/b] / {budget} kcal  ({cal_pct:.0f}%)"
+        ))
+        inner.add_widget(stat_lbl(
+            f"Remaining: [b][color={rem_col}]{abs(remaining)} kcal[/color][/b]"
+            + ("  ⚠ over budget" if remaining < 0 else "")
+        ))
+        if meals:
+            inner.add_widget(stat_lbl(f"Meals logged: {len(meals)}"))
+            for m in meals:
+                inner.add_widget(stat_lbl(
+                    f"  [color=666666]{m['time']}[/color]  {m['meal']}  "
+                    f"[color=ffaa44]{m['kcal']} kcal[/color]"
+                ))
+        else:
+            inner.add_widget(stat_lbl("[color=555555]No meals logged today.[/color]"))
+
+        inner.add_widget(sep())
+
+        # ── AI Analyses ────────────────────────────────────────────────────────
+        inner.add_widget(section_title("AI Analyses Today", "cc66ff"))
+        if today_analyses:
+            for a in today_analyses:
+                mc = "3399ff" if a['mode'] == 'Treadmill' else "ff9933"
+                inner.add_widget(stat_lbl(
+                    f"[color={mc}]{a['mode']}[/color]  "
+                    f"[color=666666]{a['timestamp'][11:]}[/color]"
+                ))
+        else:
+            inner.add_widget(stat_lbl("[color=555555]No AI analyses run today.[/color]"))
+
+        inner.add_widget(sep())
+
+        # ── Insight ────────────────────────────────────────────────────────────
+        inner.add_widget(section_title("Today's Insight", "ffdd44"))
+        insight_text = _daily_insight(latest_entry, consumed, budget, len(meals))
+        insight_lbl  = Label(
+            text=insight_text, markup=True, font_size='13sp', halign='left',
+            size_hint_y=None, color=(0.92, 0.92, 0.85, 1),
+        )
+        insight_lbl.bind(width=lambda l, w: setattr(l, 'text_size', (w, None)))
+        insight_lbl.bind(texture_size=lambda l, ts: setattr(l, 'height', ts[1] + 10))
+        inner.add_widget(insight_lbl)
+
+        scroll.add_widget(inner)
+        outer.add_widget(scroll)
+
+        close_btn = Button(text='Close', size_hint_y=None, height=48,
+                           background_color=(0.25, 0.25, 0.25, 1))
+        outer.add_widget(close_btn)
+
+        popup = Popup(title=f"Today's Summary — {today_display}",
+                      content=outer, size_hint=(0.95, 0.95))
+        close_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
     # ── Calorie budget popup ───────────────────────────────────────────────────
 
     def open_calorie_popup(self):
@@ -1153,6 +1295,42 @@ class FitnessRoot(BoxLayout):
 
 def _rgb_hex(rgb):
     return "".join(f"{int(c*255):02x}" for c in rgb)
+
+
+def _daily_insight(weight_entry, consumed, budget, meal_count):
+    """Return a short motivational insight string based on today's data."""
+    lines = []
+    if weight_entry:
+        to_go = max(weight_entry['kg'] - GOAL_WEIGHT, 0)
+        if to_go == 0:
+            lines.append("Amazing — you've hit your 75 kg goal! Keep it up.")
+        elif to_go < 2:
+            lines.append(f"So close! Just {to_go:.1f} kg away from your 75 kg goal.")
+        elif to_go < 5:
+            lines.append(f"Good progress — {to_go:.1f} kg to go. Stay consistent.")
+        else:
+            lines.append(f"You're {to_go:.1f} kg from your goal. Every session brings you closer.")
+    else:
+        lines.append("Log your weight today to start tracking progress toward 75 kg.")
+
+    if budget > 0:
+        ratio = consumed / budget
+        if meal_count == 0:
+            lines.append("No meals logged yet — remember to track what you eat.")
+        elif ratio <= 0.75:
+            lines.append(f"Calorie intake looks great at {ratio*100:.0f}% of your budget.")
+        elif ratio <= 1.0:
+            lines.append(
+                f"You've used {ratio*100:.0f}% of your calorie budget. "
+                "Stay mindful for the rest of the day."
+            )
+        else:
+            over = consumed - budget
+            lines.append(
+                f"You're {over} kcal over budget today. "
+                "A lighter dinner can help balance it out."
+            )
+    return "\n".join(lines)
 
 
 class PersonalOptimizerApp(App):
