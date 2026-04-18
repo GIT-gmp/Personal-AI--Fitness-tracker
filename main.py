@@ -1,11 +1,13 @@
+import json
+import base64
+import requests
+import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.lang import Builder
-from kivy.clock import Clock
+from kivy.clock import Clock, mainthread
 from kivy.utils import platform
-import google.generativeai as genai
 
-# UI DESIGN (Kivy Language)
 KV_INTERFACE = """
 <FitnessRoot>:
     orientation: 'vertical'
@@ -17,7 +19,7 @@ KV_INTERFACE = """
             size: self.size
 
     Label:
-        text: "PERSONAL OPTIMIZER v1.0"
+        text: "PERSONAL OPTIMIZER v1.1"
         size_hint_y: 0.1
         color: 0, 1, 0, 1
         font_size: '20sp'
@@ -51,47 +53,56 @@ KV_INTERFACE = """
 class FitnessRoot(BoxLayout):
     def capture_and_analyze(self):
         self.ids.advice_output.text = "[ PROCESSING: CONNECTING TO BRAIN... ]"
-        camera = self.ids.camera
         photo_path = "workout_capture.png"
+        self.ids.camera.export_to_png(photo_path)
         
-        # Save the image from the camera feed
-        camera.export_to_png(photo_path)
-        
-        # Give the system 1 second to write the file before reading it
-        Clock.schedule_once(lambda dt: self.call_gemini_api(photo_path), 1.0)
+        # Run API call in a background thread so the app doesn't freeze
+        Clock.schedule_once(lambda dt: threading.Thread(target=self.call_gemini_api, args=(photo_path,)).start(), 1.0)
+
+    @mainthread
+    def update_ui(self, message):
+        # Update the text on the main screen safely
+        self.ids.advice_output.text = message
 
     def call_gemini_api(self, path):
-        # API CONFIG (The key you provided earlier)
-        genai.configure(api_key="AQ.Ab8RN6JDhwc4Jvn1kTrsJUN4cqTPY8Sx_-nVS0rOzSRyh_8eBg")
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        api_key = "AQ.Ab8RN6JDhwc4Jvn1kTrsJUN4cqTPY8Sx_-nVS0rOzSRyh_8eBg"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
         try:
-            # The "Developer Prompt" tailored to your fitness goals
-            prompt = (
-                "Analyze this treadmill display. Extract Distance, Time, and Speed. "
-                "User Profile: 89kg, 169cm. Goal: 75kg. "
-                "Current Routine: 3km run + 1.2km walk (15% incline). "
-                "Based on this photo, provide one specific technical optimization for tomorrow's session."
-            )
+            # Convert image to Base64
+            with open(path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+
+            # Build the lightweight REST payload
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": "Analyze this treadmill display. Extract Distance, Time, and Speed. User Profile: 89kg, 169cm. Goal: 75kg. Current Routine: 3km run + 1.2km walk (15% incline). Provide one specific technical optimization for tomorrow's session."},
+                        {"inline_data": {"mime_type": "image/png", "data": encoded_string}}
+                    ]
+                }]
+            }
+            headers = {'Content-Type': 'application/json'}
+
+            # Send the request
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
             
-            with open(path, 'rb') as f:
-                img_data = f.read()
-            
-            response = model.generate_content([
-                prompt,
-                {'mime_type': 'image/png', 'data': img_data}
-            ])
-            
-            self.ids.advice_output.text = response.text
+            if response.status_code == 200:
+                result = response.json()
+                advice = result['candidates'][0]['content']['parts'][0]['text']
+                self.update_ui(advice)
+            else:
+                self.update_ui(f"API ERROR: {response.status_code}\\n{response.text}")
+
         except Exception as e:
-            self.ids.advice_output.text = f"CONNECTION ERROR: {str(e)}"
+            self.update_ui(f"CONNECTION ERROR: {str(e)}")
 
 class PersonalOptimizerApp(App):
     def build(self):
-        # Ensure camera permissions are handled on Android
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+            # Ask for permissions right as the app boots
+            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.INTERNET])
             
         Builder.load_string(KV_INTERFACE)
         return FitnessRoot()
