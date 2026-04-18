@@ -1,14 +1,21 @@
 import json
 import base64
+import os
 import requests
 import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.popup import Popup
+from kivy.uix.filechooser import FileChooserIconView
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.gridlayout import GridLayout
 from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
+from PIL import Image as PILImage
 
-# V2.2 CLEAN UI DASHBOARD
+# V2.3 CLEAN UI DASHBOARD WITH UPLOAD
 KV_INTERFACE = """
 <FitnessRoot>:
     orientation: 'vertical'
@@ -165,7 +172,7 @@ KV_INTERFACE = """
                 background_color: 0, 0.8, 0.3, 1
                 on_press: root.capture_and_analyze()
 
-            # ACTION BUTTONS
+            # ACTION BUTTONS (camera)
             GridLayout:
                 cols: 2
                 spacing: 10
@@ -180,6 +187,15 @@ KV_INTERFACE = """
                     background_color: 1, 0.6, 0.2, 1
                     on_press: root.toggle_camera('meal')
 
+            # UPLOAD BUTTON
+            Button:
+                text: "Upload Picture"
+                size_hint_y: None
+                height: 55
+                background_color: 0.5, 0.2, 0.9, 1
+                bold: True
+                on_press: root.open_upload_picker()
+
             # AI OUTPUT CONSOLE
             Label:
                 id: advice_output
@@ -191,11 +207,17 @@ KV_INTERFACE = """
                 color: 0.8, 0.8, 0.8, 1
 """
 
+
 class FitnessRoot(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_mode = None
         self._camera = None
+        self._file_popup = None
+        self._mode_popup = None
+        self._pending_upload_path = None
+
+    # ── Camera helpers ─────────────────────────────────────────────────────────
 
     def _get_or_create_camera(self):
         if self._camera is not None:
@@ -212,24 +234,21 @@ class FitnessRoot(BoxLayout):
 
     def toggle_camera(self, mode):
         self.current_mode = mode
-        camera_container = self.ids.camera_container
-        capture_btn = self.ids.capture_btn
-
         camera = self._get_or_create_camera()
         if camera is None:
             return
 
-        camera_container.height = 300
-        camera_container.opacity = 1
-        capture_btn.height = 60
-        capture_btn.opacity = 1
+        self.ids.camera_container.height = 300
+        self.ids.camera_container.opacity = 1
+        self.ids.capture_btn.height = 60
+        self.ids.capture_btn.opacity = 1
         camera.play = True
 
         if mode == 'treadmill':
-            capture_btn.text = "ANALYZE TREADMILL"
+            self.ids.capture_btn.text = "ANALYZE TREADMILL"
             self.ids.advice_output.text = "Point camera at treadmill display..."
         elif mode == 'meal':
-            capture_btn.text = "ESTIMATE CALORIES"
+            self.ids.capture_btn.text = "ESTIMATE CALORIES"
             self.ids.advice_output.text = "Point camera at food or menu..."
 
     def capture_and_analyze(self):
@@ -249,7 +268,140 @@ class FitnessRoot(BoxLayout):
         self.ids.capture_btn.height = 0
         self.ids.capture_btn.opacity = 0
 
-        Clock.schedule_once(lambda dt: threading.Thread(target=self.call_gemini_api, args=(photo_path, self.current_mode)).start(), 0.5)
+        Clock.schedule_once(
+            lambda dt: threading.Thread(
+                target=self.call_gemini_api,
+                args=(photo_path, self.current_mode)
+            ).start(),
+            0.5
+        )
+
+    # ── Upload helpers ─────────────────────────────────────────────────────────
+
+    def open_upload_picker(self):
+        """Step 1: open a file chooser so the user can pick an image."""
+        content = BoxLayout(orientation='vertical', spacing=8, padding=10)
+
+        chooser = FileChooserIconView(
+            filters=['*.png', '*.jpg', '*.jpeg', '*.bmp', '*.gif', '*.webp'],
+            path=os.path.expanduser('~'),
+        )
+        content.add_widget(chooser)
+
+        btn_row = BoxLayout(size_hint_y=None, height=50, spacing=8)
+
+        select_btn = Button(
+            text='Select',
+            background_color=(0.2, 0.7, 0.3, 1),
+        )
+        cancel_btn = Button(
+            text='Cancel',
+            background_color=(0.7, 0.2, 0.2, 1),
+        )
+        btn_row.add_widget(select_btn)
+        btn_row.add_widget(cancel_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(
+            title='Select an Image',
+            content=content,
+            size_hint=(0.95, 0.9),
+        )
+
+        select_btn.bind(on_press=lambda _: self._on_file_selected(chooser.selection, popup))
+        cancel_btn.bind(on_press=popup.dismiss)
+
+        self._file_popup = popup
+        popup.open()
+
+    def _on_file_selected(self, selection, file_popup):
+        """Step 2: file chosen – now ask which mode to use."""
+        if not selection:
+            self.ids.advice_output.text = "No file selected."
+            file_popup.dismiss()
+            return
+
+        path = selection[0]
+        if not os.path.isfile(path):
+            self.ids.advice_output.text = "Invalid file."
+            file_popup.dismiss()
+            return
+
+        self._pending_upload_path = path
+        file_popup.dismiss()
+        self._open_mode_picker()
+
+    def _open_mode_picker(self):
+        """Step 3: ask the user whether this is a treadmill or meal image."""
+        content = BoxLayout(orientation='vertical', spacing=12, padding=15)
+
+        content.add_widget(Label(
+            text='What would you like to analyze?',
+            font_size='16sp',
+            size_hint_y=None,
+            height=40,
+        ))
+
+        treadmill_btn = Button(
+            text='Treadmill Display',
+            background_color=(0.2, 0.6, 1, 1),
+            size_hint_y=None,
+            height=55,
+        )
+        meal_btn = Button(
+            text='Meal / Food',
+            background_color=(1, 0.6, 0.2, 1),
+            size_hint_y=None,
+            height=55,
+        )
+        cancel_btn = Button(
+            text='Cancel',
+            background_color=(0.4, 0.4, 0.4, 1),
+            size_hint_y=None,
+            height=45,
+        )
+
+        content.add_widget(treadmill_btn)
+        content.add_widget(meal_btn)
+        content.add_widget(cancel_btn)
+
+        popup = Popup(
+            title='Analysis Mode',
+            content=content,
+            size_hint=(0.8, 0.5),
+        )
+
+        treadmill_btn.bind(on_press=lambda _: self._run_upload_analysis('treadmill', popup))
+        meal_btn.bind(on_press=lambda _: self._run_upload_analysis('meal', popup))
+        cancel_btn.bind(on_press=popup.dismiss)
+
+        self._mode_popup = popup
+        popup.open()
+
+    def _run_upload_analysis(self, mode, popup):
+        """Step 4: convert the image to PNG and call the API."""
+        popup.dismiss()
+        path = self._pending_upload_path
+        if not path:
+            return
+
+        self.ids.advice_output.text = "[ PROCESSING: CONNECTING TO BRAIN... ]"
+
+        # Convert any format to PNG for consistent encoding
+        converted_path = "uploaded_image.png"
+        try:
+            img = PILImage.open(path).convert('RGB')
+            img.save(converted_path, 'PNG')
+        except Exception as e:
+            self.ids.advice_output.text = f"Image error: {str(e)}"
+            return
+
+        threading.Thread(
+            target=self.call_gemini_api,
+            args=(converted_path, mode)
+        ).start()
+
+    # ── Gemini API ─────────────────────────────────────────────────────────────
 
     @mainthread
     def update_ui(self, message):
@@ -290,6 +442,7 @@ class FitnessRoot(BoxLayout):
         except Exception as e:
             self.update_ui(f"CONNECTION ERROR: {str(e)}")
 
+
 class PersonalOptimizerApp(App):
     def build(self):
         if platform == 'android':
@@ -298,6 +451,7 @@ class PersonalOptimizerApp(App):
 
         Builder.load_string(KV_INTERFACE)
         return FitnessRoot()
+
 
 if __name__ == '__main__':
     PersonalOptimizerApp().run()
