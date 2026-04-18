@@ -7,7 +7,7 @@ source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
 
 # Requirements: Added 'google-generativeai' and 'pillow' for your AI logic
-requirements = python3,kivy,google-generativeai,pillow,certifi,chardet,idna,requests,urllib3
+requirements = python3,kivy,pillow,certifi,chardet,idna,requests,urllib3
 
 orientation = portrait
 fullscreen = 0
