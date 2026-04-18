@@ -1,0 +1,4 @@
+kivy
+google-generativeai
+Pillow
+requests
