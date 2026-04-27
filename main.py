@@ -7,8 +7,9 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
+from plyer import filechooser  # NEW: Native Android file access
 
-# V3.0 PREMIUM DARK THEME DASHBOARD
+# V3.1 PREMIUM DARK THEME (WITH GALLERY)
 KV_INTERFACE = """
 <ActionBtn@ButtonBehavior+BoxLayout>:
     orientation: 'vertical'
@@ -91,7 +92,6 @@ KV_INTERFACE = """
                         size: self.size
                         radius: [15]
                 
-                # Title
                 Label:
                     text: "Workout Insights & Progress"
                     font_size: '16sp'
@@ -100,11 +100,9 @@ KV_INTERFACE = """
                     text_size: self.size
                     halign: 'left'
 
-                # Graph & Stats Area
                 BoxLayout:
                     size_hint_y: 0.5
                     spacing: 10
-                    # Simulated Graph Box
                     BoxLayout:
                         size_hint_x: 0.5
                         canvas.before:
@@ -119,7 +117,6 @@ KV_INTERFACE = """
                             Line:
                                 points: [self.x, self.y+10, self.x+20, self.y+30, self.x+40, self.y+20, self.x+60, self.y+60, self.x+80, self.y+40, self.x+100, self.y+70, self.x+120, self.y+30]
                                 width: 1.5
-                    # Stats Text
                     BoxLayout:
                         orientation: 'vertical'
                         size_hint_x: 0.5
@@ -130,7 +127,6 @@ KV_INTERFACE = """
                             text_size: self.size
                             halign: 'left'
 
-                # Calories Bar
                 BoxLayout:
                     orientation: 'vertical'
                     size_hint_y: 0.3
@@ -153,7 +149,7 @@ KV_INTERFACE = """
                                 rgba: 1, 0.3, 0.2, 1
                             RoundedRectangle:
                                 pos: self.pos
-                                size: (self.width * 0.8, self.height) # 80% fill
+                                size: (self.width * 0.8, self.height)
                                 radius: [4]
                     BoxLayout:
                         Label:
@@ -193,7 +189,6 @@ KV_INTERFACE = """
                     text_size: self.size
                     halign: 'left'
 
-                # Weight Goal Bar
                 BoxLayout:
                     orientation: 'vertical'
                     size_hint_y: None
@@ -224,7 +219,7 @@ KV_INTERFACE = """
                                 rgba: 0.5, 0.9, 0.3, 1
                             RoundedRectangle:
                                 pos: self.pos
-                                size: (self.width * 0.6, self.height) # 60% fill
+                                size: (self.width * 0.6, self.height)
                                 radius: [4]
                     BoxLayout:
                         Label:
@@ -247,7 +242,7 @@ KV_INTERFACE = """
                     text_size: self.size
                     halign: 'left'
 
-                # Log Progress Pictures
+                # LOG PROGRESS PICTURES
                 Label:
                     text: "Log Progress Pictures"
                     font_size: '14sp'
@@ -264,13 +259,13 @@ KV_INTERFACE = """
                     ActionBtn:
                         title_text: "[ Gallery ]"
                         sub_text: "Upload picture"
-                        on_press: root.ui_message("Gallery upload requires v3.1 update.")
+                        on_press: root.open_gallery('treadmill') # UPDATED
                     ActionBtn:
                         title_text: "[ Camera ]"
                         sub_text: "Take a picture"
                         on_press: root.toggle_camera('treadmill')
 
-                # Meal Plan & Logging
+                # MEAL PLAN & LOGGING
                 Label:
                     text: "Meal Plan & Logging"
                     font_size: '14sp'
@@ -287,7 +282,7 @@ KV_INTERFACE = """
                     ActionBtn:
                         title_text: "[ Menu ]"
                         sub_text: "Upload menu picture"
-                        on_press: root.ui_message("Menu upload requires v3.1 update.")
+                        on_press: root.open_gallery('meal') # UPDATED
                     ActionBtn:
                         title_text: "[ Food Plate ]"
                         sub_text: "Take food picture"
@@ -329,8 +324,23 @@ class FitnessRoot(BoxLayout):
         super().__init__(**kwargs)
         self.current_mode = None
 
-    def ui_message(self, msg):
-        self.ids.advice_output.text = msg
+    # NEW: Handle Gallery Selection
+    def open_gallery(self, mode):
+        self.current_mode = mode
+        self.ids.advice_output.text = "Opening Android File Manager..."
+        try:
+            filechooser.open_file(on_selection=self.handle_selection)
+        except Exception as e:
+            self.update_ui(f"Gallery Error: {str(e)}")
+
+    def handle_selection(self, selection):
+        if not selection:
+            self.update_ui("Gallery upload cancelled.")
+            return
+        
+        photo_path = selection[0]
+        self.update_ui("[ PROCESSING: ANALYZING UPLOADED IMAGE... ]")
+        Clock.schedule_once(lambda dt: threading.Thread(target=self.call_gemini_api, args=(photo_path, self.current_mode)).start(), 0.5)
 
     def toggle_camera(self, mode):
         self.current_mode = mode
@@ -407,7 +417,8 @@ class PersonalOptimizerApp(App):
     def build(self):
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.INTERNET])
+            # Asking for Storage permissions early prevents crashes when opening Gallery
+            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.INTERNET])
         Builder.load_string(KV_INTERFACE)
         return FitnessRoot()
 
