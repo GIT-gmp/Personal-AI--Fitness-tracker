@@ -4,248 +4,189 @@ import requests
 import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.widget import Widget
+from kivy.properties import NumericProperty, ListProperty
 from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
+from kivy.animation import Animation
 from kivy.utils import platform
-from plyer import filechooser  # NEW: Native Android file access
+from plyer import filechooser
 
-# V3.1 PREMIUM DARK THEME (WITH GALLERY)
+# V4.0 REACT NATIVE INSPIRED UI
 KV_INTERFACE = """
-<ActionBtn@ButtonBehavior+BoxLayout>:
+#:import get_color kivy.utils.get_color_from_hex
+
+<ProgressRing>:
+    canvas:
+        # Background Track
+        Color:
+            rgba: get_color('#334155')
+        Line:
+            circle: (self.center_x, self.center_y, (self.width/2) - root.radius_offset)
+            width: root.thickness
+        # Animated Foreground
+        Color:
+            rgba: root.ring_color
+        Line:
+            circle: (self.center_x, self.center_y, (self.width/2) - root.radius_offset, 0, root.angle)
+            width: root.thickness
+            cap: 'round'
+
+<RNCard@BoxLayout>:
     orientation: 'vertical'
-    padding: [10, 10]
+    padding: 16
     canvas.before:
         Color:
-            rgba: 0.15, 0.15, 0.15, 1
+            rgba: get_color('#1E293B')
         RoundedRectangle:
             pos: self.pos
             size: self.size
-            radius: [10]
-    title_text: ''
-    sub_text: ''
+            radius: [16]
+
+<ActionBtn@ButtonBehavior+BoxLayout>:
+    bg_color: get_color('#22C55E')
+    text: "Button"
+    canvas.before:
+        Color:
+            rgba: self.bg_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [12]
     Label:
-        text: root.title_text
+        text: root.text
         bold: True
-        font_size: '14sp'
-        text_size: self.size
-        halign: 'left'
-        valign: 'bottom'
-    Label:
-        text: root.sub_text
-        font_size: '11sp'
-        color: 0.6, 0.6, 0.6, 1
-        text_size: self.size
-        halign: 'left'
-        valign: 'top'
+        color: 0, 0, 0, 1
 
 <FitnessRoot>:
     orientation: 'vertical'
     canvas.before:
         Color:
-            rgba: 0.02, 0.02, 0.02, 1
+            rgba: get_color('#0F172A')
         Rectangle:
             pos: self.pos
             size: self.size
 
-    # HEADER
-    BoxLayout:
-        orientation: 'vertical'
-        size_hint_y: 0.12
-        padding: [15, 20, 15, 5]
-        Label:
-            text: "Good evening, Gopimadhav"
-            font_size: '22sp'
-            bold: True
-            text_size: self.size
-            halign: 'left'
-            valign: 'bottom'
-        Label:
-            text: "Last synced [color=cccccc]Just Now[/color]"
-            markup: True
-            font_size: '12sp'
-            color: 0.5, 0.5, 0.5, 1
-            text_size: self.size
-            halign: 'left'
-            valign: 'top'
-
     ScrollView:
-        size_hint_y: 0.88
+        size_hint_y: 0.9
         BoxLayout:
             orientation: 'vertical'
-            padding: [15, 10, 15, 20]
-            spacing: 20
+            padding: 16
+            spacing: 16
             size_hint_y: None
             height: self.minimum_height
 
-            # CARD 1: WORKOUT INSIGHTS
-            BoxLayout:
-                orientation: 'vertical'
+            Label:
+                text: "Good Evening 👋"
+                font_size: '24sp'
+                bold: True
+                size_hint_y: None
+                height: 40
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+
+            # 🔹 ANIMATED DAILY ACTIVITY RINGS
+            RNCard:
                 size_hint_y: None
                 height: 220
-                padding: 15
-                spacing: 10
-                canvas.before:
-                    Color:
-                        rgba: 0.08, 0.08, 0.08, 1
-                    RoundedRectangle:
-                        pos: self.pos
-                        size: self.size
-                        radius: [15]
-                
                 Label:
-                    text: "Workout Insights & Progress"
-                    font_size: '16sp'
-                    bold: True
-                    size_hint_y: 0.2
+                    text: "Daily Activity"
+                    color: get_color('#94A3B8')
+                    size_hint_y: 0.15
                     text_size: self.size
                     halign: 'left'
-
-                BoxLayout:
-                    size_hint_y: 0.5
-                    spacing: 10
-                    BoxLayout:
-                        size_hint_x: 0.5
-                        canvas.before:
-                            Color:
-                                rgba: 0.15, 0.25, 0.4, 0.5
-                            RoundedRectangle:
-                                pos: self.pos
-                                size: self.size
-                                radius: [5]
-                            Color:
-                                rgba: 0.3, 0.5, 1, 1
-                            Line:
-                                points: [self.x, self.y+10, self.x+20, self.y+30, self.x+40, self.y+20, self.x+60, self.y+60, self.x+80, self.y+40, self.x+100, self.y+70, self.x+120, self.y+30]
-                                width: 1.5
-                    BoxLayout:
-                        orientation: 'vertical'
-                        size_hint_x: 0.5
-                        Label:
-                            text: "Walking: 5200 steps, 310 kcal\\nWalking: 4200 steps, 310 kcal\\nWalking: 3700 steps, 310 kcal"
-                            font_size: '10sp'
-                            color: 0.7, 0.7, 0.7, 1
-                            text_size: self.size
-                            halign: 'left'
-
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: 0.3
+                FloatLayout:
+                    ProgressRing:
+                        id: ring_1
+                        ring_color: get_color('#22C55E')
+                        radius_offset: 0
+                        thickness: 8
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+                        size_hint: None, None
+                        size: 140, 140
+                    ProgressRing:
+                        id: ring_2
+                        ring_color: get_color('#38BDF8')
+                        radius_offset: 14
+                        thickness: 8
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+                        size_hint: None, None
+                        size: 140, 140
+                    ProgressRing:
+                        id: ring_3
+                        ring_color: get_color('#F97316')
+                        radius_offset: 28
+                        thickness: 8
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+                        size_hint: None, None
+                        size: 140, 140
                     Label:
-                        text: "Calories burned"
-                        font_size: '12sp'
-                        text_size: self.size
-                        halign: 'left'
-                    BoxLayout:
-                        size_hint_y: None
-                        height: 8
-                        canvas.before:
-                            Color:
-                                rgba: 0.2, 0.2, 0.2, 1
-                            RoundedRectangle:
-                                pos: self.pos
-                                size: self.size
-                                radius: [4]
-                            Color:
-                                rgba: 1, 0.3, 0.2, 1
-                            RoundedRectangle:
-                                pos: self.pos
-                                size: (self.width * 0.8, self.height)
-                                radius: [4]
-                    BoxLayout:
-                        Label:
-                            text: "[color=ff5555]810[/color]/400"
-                            markup: True
-                            font_size: '12sp'
-                            text_size: self.size
-                            halign: 'left'
-                        Label:
-                            text: "400 goal"
-                            font_size: '12sp'
-                            color: 0.6, 0.6, 0.6, 1
-                            text_size: self.size
-                            halign: 'right'
+                        text: "Daily"
+                        font_size: '18sp'
+                        bold: True
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
 
-            # CARD 2: FITNESS GOALS & MEAL PLAN
-            BoxLayout:
-                orientation: 'vertical'
+            # 🔹 AI COACH PANEL (Replaces terminal output)
+            RNCard:
                 size_hint_y: None
-                height: 380
-                padding: 15
-                spacing: 12
-                canvas.before:
-                    Color:
-                        rgba: 0.08, 0.08, 0.08, 1
-                    RoundedRectangle:
-                        pos: self.pos
-                        size: self.size
-                        radius: [15]
-
+                height: max(100, advice_output.texture_size[1] + 40)
                 Label:
-                    text: "Fitness Goals & Meal Plan"
-                    font_size: '16sp'
-                    bold: True
-                    size_hint_y: None
-                    height: 25
-                    text_size: self.size
-                    halign: 'left'
-
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: 50
-                    BoxLayout:
-                        Label:
-                            text: "Weight Goal"
-                            font_size: '13sp'
-                            text_size: self.size
-                            halign: 'left'
-                        Label:
-                            text: "Target date: Dec. 23"
-                            font_size: '11sp'
-                            color: 0.6, 0.6, 0.6, 1
-                            text_size: self.size
-                            halign: 'right'
-                    BoxLayout:
-                        size_hint_y: None
-                        height: 8
-                        canvas.before:
-                            Color:
-                                rgba: 0.2, 0.2, 0.2, 1
-                            RoundedRectangle:
-                                pos: self.pos
-                                size: self.size
-                                radius: [4]
-                            Color:
-                                rgba: 0.5, 0.9, 0.3, 1
-                            RoundedRectangle:
-                                pos: self.pos
-                                size: (self.width * 0.6, self.height)
-                                radius: [4]
-                    BoxLayout:
-                        Label:
-                            text: "80kg"
-                            font_size: '11sp'
-                            text_size: self.size
-                            halign: 'left'
-                        Label:
-                            text: "70kg"
-                            font_size: '11sp'
-                            text_size: self.size
-                            halign: 'right'
-
-                Label:
-                    text: "Goal Predictor: 10-12 weeks at current progress"
-                    font_size: '11sp'
-                    color: 0.6, 0.6, 0.6, 1
+                    text: "AI Coach"
+                    color: get_color('#94A3B8')
                     size_hint_y: None
                     height: 20
                     text_size: self.size
                     halign: 'left'
-
-                # LOG PROGRESS PICTURES
                 Label:
-                    text: "Log Progress Pictures"
-                    font_size: '14sp'
+                    id: advice_output
+                    text: "Ready to analyze your workout or meal..."
+                    color: 1, 1, 1, 1
+                    text_size: self.width, None
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    halign: 'left'
+
+            # 🔹 STATS GRID
+            GridLayout:
+                cols: 2
+                spacing: 16
+                size_hint_y: None
+                height: 80
+                RNCard:
+                    Label:
+                        text: "Steps"
+                        color: get_color('#94A3B8')
+                        text_size: self.size
+                        halign: 'left'
+                    Label:
+                        text: "8,230"
+                        font_size: '18sp'
+                        bold: True
+                        text_size: self.size
+                        halign: 'left'
+                RNCard:
+                    Label:
+                        text: "Calories"
+                        color: get_color('#94A3B8')
+                        text_size: self.size
+                        halign: 'left'
+                    Label:
+                        text: "520 kcal"
+                        font_size: '18sp'
+                        bold: True
+                        text_size: self.size
+                        halign: 'left'
+
+            # 🔹 ACTION BUTTONS (Replaces "Start Workout")
+            RNCard:
+                size_hint_y: None
+                height: 180
+                spacing: 12
+                Label:
+                    text: "Log Progress"
+                    font_size: '18sp'
                     bold: True
                     size_hint_y: None
                     height: 25
@@ -254,41 +195,24 @@ KV_INTERFACE = """
                 GridLayout:
                     cols: 2
                     spacing: 10
-                    size_hint_y: None
-                    height: 50
                     ActionBtn:
-                        title_text: "[ Gallery ]"
-                        sub_text: "Upload picture"
-                        on_press: root.open_gallery('treadmill') # UPDATED
-                    ActionBtn:
-                        title_text: "[ Camera ]"
-                        sub_text: "Take a picture"
+                        text: "📷 Camera"
+                        bg_color: get_color('#22C55E')
                         on_press: root.toggle_camera('treadmill')
-
-                # MEAL PLAN & LOGGING
-                Label:
-                    text: "Meal Plan & Logging"
-                    font_size: '14sp'
-                    bold: True
-                    size_hint_y: None
-                    height: 25
-                    text_size: self.size
-                    halign: 'left'
-                GridLayout:
-                    cols: 2
-                    spacing: 10
-                    size_hint_y: None
-                    height: 50
                     ActionBtn:
-                        title_text: "[ Menu ]"
-                        sub_text: "Upload menu picture"
-                        on_press: root.open_gallery('meal') # UPDATED
+                        text: "🖼️ Gallery"
+                        bg_color: get_color('#15803D')
+                        on_press: root.open_gallery('treadmill')
                     ActionBtn:
-                        title_text: "[ Food Plate ]"
-                        sub_text: "Take food picture"
+                        text: "🥗 Meal Cam"
+                        bg_color: get_color('#38BDF8')
                         on_press: root.toggle_camera('meal')
+                    ActionBtn:
+                        text: "🍽️ Meal Gal"
+                        bg_color: get_color('#0369A1')
+                        on_press: root.open_gallery('meal')
 
-            # LIVE CAMERA COMPONENT
+            # 🔹 HIDDEN CAMERA WIDGETS
             BoxLayout:
                 id: camera_container
                 orientation: 'vertical'
@@ -299,35 +223,66 @@ KV_INTERFACE = """
                     id: camera
                     resolution: (640, 480)
                     play: False
-            Button:
+            ActionBtn:
                 id: capture_btn
                 text: "SNAP PHOTO"
                 size_hint_y: None
                 height: 0
                 opacity: 0
-                background_color: 0, 0.6, 1, 1
+                bg_color: get_color('#F97316')
                 on_press: root.capture_and_analyze()
 
-            # AI OUTPUT CONSOLE
-            Label:
-                id: advice_output
-                text: "System Ready."
-                text_size: self.width, None
-                halign: 'center'
-                size_hint_y: None
-                height: max(self.texture_size[1], 100)
-                color: 0.8, 0.8, 0.8, 1
+    # 🔹 BOTTOM NAVIGATION
+    BoxLayout:
+        size_hint_y: 0.1
+        canvas.before:
+            Color:
+                rgba: get_color('#1E293B')
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        Label:
+            text: "Home"
+            color: 1, 1, 1, 1
+            bold: True
+        Label:
+            text: "Workout"
+            color: get_color('#94A3B8')
+        Label:
+            text: "Stats"
+            color: get_color('#94A3B8')
+        Label:
+            text: "Profile"
+            color: get_color('#94A3B8')
 """
+
+class ProgressRing(Widget):
+    angle = NumericProperty(0)
+    ring_color = ListProperty([1, 1, 1, 1])
+    radius_offset = NumericProperty(0)
+    thickness = NumericProperty(10)
+
+    def animate_to(self, target_angle):
+        # Creates the smooth fill effect
+        anim = Animation(angle=target_angle, duration=1.2, t='out_quad')
+        anim.start(self)
 
 class FitnessRoot(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_mode = None
+        # Start ring animations half a second after the app boots
+        Clock.schedule_once(self.trigger_animations, 0.5)
 
-    # NEW: Handle Gallery Selection
+    def trigger_animations(self, dt):
+        # 360 degrees is a full circle. (e.g., 270 is 75%)
+        self.ids.ring_1.animate_to(270)  
+        self.ids.ring_2.animate_to(216)  
+        self.ids.ring_3.animate_to(144)  
+
     def open_gallery(self, mode):
         self.current_mode = mode
-        self.ids.advice_output.text = "Opening Android File Manager..."
+        self.ids.advice_output.text = "Opening File Manager..."
         try:
             filechooser.open_file(on_selection=self.handle_selection)
         except Exception as e:
@@ -337,9 +292,8 @@ class FitnessRoot(BoxLayout):
         if not selection:
             self.update_ui("Gallery upload cancelled.")
             return
-        
         photo_path = selection[0]
-        self.update_ui("[ PROCESSING: ANALYZING UPLOADED IMAGE... ]")
+        self.update_ui("[ PROCESSING: ANALYZING IMAGE... ]")
         Clock.schedule_once(lambda dt: threading.Thread(target=self.call_gemini_api, args=(photo_path, self.current_mode)).start(), 0.5)
 
     def toggle_camera(self, mode):
@@ -355,11 +309,11 @@ class FitnessRoot(BoxLayout):
         camera.play = True
         
         if mode == 'treadmill':
-            capture_btn.text = "ANALYZE PROGRESS"
-            self.ids.advice_output.text = "Camera Active: Point at treadmill..."
+            capture_btn.text = "ANALYZE TREADMILL"
+            self.ids.advice_output.text = "Camera Active..."
         elif mode == 'meal':
             capture_btn.text = "ESTIMATE MEAL"
-            self.ids.advice_output.text = "Camera Active: Point at food plate..."
+            self.ids.advice_output.text = "Camera Active..."
 
     def capture_and_analyze(self):
         self.ids.advice_output.text = "[ PROCESSING: ANALYZING WITH AI... ]"
@@ -417,7 +371,6 @@ class PersonalOptimizerApp(App):
     def build(self):
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            # Asking for Storage permissions early prevents crashes when opening Gallery
             request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.INTERNET])
         Builder.load_string(KV_INTERFACE)
         return FitnessRoot()
