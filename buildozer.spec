@@ -1,6 +1,6 @@
 [app]
 title = Personal Optimizer
-package.name = personaloptimizer
+package.name = fitnessoptimizerv4
 package.domain = org.gopimadhav
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
