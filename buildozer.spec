@@ -4,7 +4,7 @@ package.name = fitnessoptimizerv4
 package.domain = org.gopimadhav
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
-version = 1.0
+version = 2.0
 
 # Requirements: Added 'google-generativeai' and 'pillow' for your AI logic
 requirements = python3,kivy,pillow,certifi,chardet,idna,requests,urllib3
